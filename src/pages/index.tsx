@@ -3,10 +3,23 @@ import { type NextPage } from "next";
 import { signIn, signOut, useSession } from "next-auth/react";
 import { trpc } from "../utils/trpc";
 
-const Form = ({ session }) => {
-  // const { data: session } = useSession()
+const Form = () => {
+  const { data: session } = useSession()
   const [message, setMessage] = useState("");
-  const postMessage = trpc.guestbook.postMessage.useMutation();
+  const utils = trpc.useContext()
+  const postMessage = trpc.guestbook.postMessage.useMutation({
+    onMutate: () => {
+      utils.guestbook.getAll.cancel();
+      const optimisticUpdate = utils.guestbook.getAll.getData();
+
+      if (optimisticUpdate) {
+        utils.guestbook.getAll.setData(optimisticUpdate, optimisticUpdate);
+      }
+    },
+    onSettled: () => {
+      utils.guestbook.getAll.invalidate();
+    },
+  });
 
   return (
     <form
@@ -14,7 +27,7 @@ const Form = ({ session }) => {
       onSubmit={(event) => {
         event.preventDefault();
         postMessage.mutate({
-          name: session.user?.name as string,
+          name: session?.user?.name as string,
           message,
         });
         setMessage("");
@@ -61,7 +74,6 @@ const Messages = () => {
 const Home: NextPage = () => {
   // useSession hook to get session data and status
   const { data: session, status } = useSession()
-
   if (status === "loading") {
     return <main>Loading...</main>;
   }
@@ -79,6 +91,9 @@ const Home: NextPage = () => {
             <button onClick={() => signOut()}>
               Logout
             </button>
+            <div className="pt-6">
+              <Form />
+            </div>
           </>
         ) : (
           <button onClick={() => signIn("discord")}>
